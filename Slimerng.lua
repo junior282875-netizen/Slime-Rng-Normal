@@ -399,7 +399,7 @@ local function stopAutoRebirth()
 end
 
 -- ========================================
---            FAST ROLL (FIXED)
+--            FAST ROLL
 -- ========================================
 
 local FastRollEnabled = false
@@ -458,6 +458,80 @@ local function stopAutoClaimIndex()
 end
 
 -- ========================================
+--           AUTO BUY ZONE
+-- ========================================
+
+local AutoBuyZoneEnabled = false
+local AutoBuyZoneThread  = nil
+
+local function startAutoBuyZone()
+    AutoBuyZoneThread = task.spawn(function()
+        while AutoBuyZoneEnabled do
+            pcall(function()
+                RS.Packages._Index
+                    :FindFirstChild("leifstout_networker@0.3.1")
+                    .networker._remotes.ZonesService.RemoteFunction
+                    :InvokeServer("requestPurchaseZone")
+            end)
+            task.wait(2)
+        end
+    end)
+end
+
+local function stopAutoBuyZone()
+    AutoBuyZoneEnabled = false
+    if AutoBuyZoneThread then task.cancel(AutoBuyZoneThread); AutoBuyZoneThread = nil end
+end
+
+-- ========================================
+--         AUTO USE ITEMS / POTIONS
+-- ========================================
+
+local ItemEnabled = {
+    luck      = false,
+    ultraLuck = false,
+    rollSpeed = false,
+    bigDice   = false,
+}
+
+local ItemThreads = {
+    luck      = nil,
+    ultraLuck = nil,
+    rollSpeed = nil,
+    bigDice   = nil,
+}
+
+local ItemDefs = {
+    luck      = { service = "BoostService",     request = "requestUseBoost", arg = "luck"      },
+    ultraLuck = { service = "BoostService",     request = "requestUseBoost", arg = "ultraLuck" },
+    rollSpeed = { service = "BoostService",     request = "requestUseBoost", arg = "rollSpeed" },
+    bigDice   = { service = "InventoryService", request = "requestUseItem",  arg = "bigDice"   },
+}
+
+local function startItem(key)
+    if ItemThreads[key] then task.cancel(ItemThreads[key]); ItemThreads[key] = nil end
+    local def = ItemDefs[key]
+    ItemThreads[key] = task.spawn(function()
+        while ItemEnabled[key] do
+            pcall(function()
+                local rf = getRF(def.service)
+                if rf then rf:InvokeServer(def.request, def.arg) end
+            end)
+            task.wait(2)
+        end
+    end)
+end
+
+local function stopItem(key)
+    ItemEnabled[key] = false
+    if ItemThreads[key] then task.cancel(ItemThreads[key]); ItemThreads[key] = nil end
+end
+
+local function stopAllItems()
+    for key in pairs(ItemEnabled) do stopItem(key) end
+end
+
+-- ========================================
 --           REDEEM ALL CODES
 -- ========================================
 
@@ -478,6 +552,149 @@ local function redeemAllCodes()
         end
         Library:Notify('Codes attempted: ' .. success .. '/' .. #CODES, 4)
     end)
+end
+
+-- ========================================
+--         FAKE ROLLS / BEST ROLL
+-- ========================================
+
+local FakeRollsEnabled = false
+local FakeBestEnabled  = false
+local FakeRollValue    = 1
+local FakeBestValue    = 1
+local FakeRollConn     = nil
+local FakeBestConn     = nil
+
+local function applyFakeRolls()
+    if FakeRollConn then FakeRollConn:Disconnect(); FakeRollConn = nil end
+    FakeRollConn = RunService.Heartbeat:Connect(function()
+        if not FakeRollsEnabled then return end
+        local l = LocalPlayer:FindFirstChild("leaderstats")
+        if l then
+            local r = l:FindFirstChild("Rolls")
+            if r then r.Value = FakeRollValue end
+        end
+    end)
+end
+
+local function removeFakeRolls()
+    if FakeRollConn then FakeRollConn:Disconnect(); FakeRollConn = nil end
+end
+
+local function applyFakeBest()
+    if FakeBestConn then FakeBestConn:Disconnect(); FakeBestConn = nil end
+    FakeBestConn = RunService.Heartbeat:Connect(function()
+        if not FakeBestEnabled then return end
+        local l = LocalPlayer:FindFirstChild("leaderstats")
+        if l then
+            local b = l:FindFirstChild("Best Roll")
+            if b then b.Value = FakeBestValue end
+        end
+    end)
+end
+
+local function removeFakeBest()
+    if FakeBestConn then FakeBestConn:Disconnect(); FakeBestConn = nil end
+end
+
+-- ========================================
+--           AUTO UPGRADE (FULL)
+-- ========================================
+
+local UPGRADE_SLOTS = {
+    -- ===== LOOT TREE (coins) =====
+    "lootTree",
+    "lootApple", "lootCarrot", "lootCherries", "lootGrapes",
+    "lootBanana", "lootWatermelon", "lootPizza", "lootChicken",
+    "lootLuck", "lootRollSpeed", "lootUltraLuck",
+    "fruits",
+    "coinIncome1",  "coinIncome2",  "coinIncome3",  "coinIncome4",
+    "coinIncome5",  "coinIncome6",  "coinIncome7",  "coinIncome8",
+    "coinIncome9",  "coinIncome10", "coinIncome11", "coinIncome12", "coinIncome13",
+    "overkill1", "overkill2", "overkill3", "overkill4",
+    "offlineLootAmount1", "offlineLootAmount2", "offlineLootAmount3",
+    "offlineLootAmount4", "offlineLootAmount5",
+
+    -- ===== MAIN UPGRADES (coins) =====
+    "rollSpeed1", "rollSpeed2", "rollSpeed3",
+    "luck1", "luck2", "luck3",
+    "rebirthLuck1", "rebirthLuck2",
+    "walkSpeed1", "walkSpeed2", "walkSpeed3",
+    "enemyCount1", "enemyCount2", "enemyCount3", "enemyCount4", "enemyCount5",
+    "slots2", "slots3", "slots4",
+    "petSlots1", "petSlots2",
+    "craftSlots1", "craftSlots2",
+    "coinMultiplier1", "coinMultiplier2", "coinMultiplier3",
+    "xpMultiplier1", "xpMultiplier2",
+
+    -- ===== SLIME UPGRADES (slimeUpgradePoints / fruit currencies) =====
+    -- Fire tree
+    "fireOrigin",
+    "fireBall1", "fireBall2", "fireBall3", "fireBall4",
+    "fireBlast1", "fireBlast2", "fireBlast3", "fireBlast4",
+    -- Ice tree
+    "iceOrigin",
+    "frostShard1", "frostShard2", "frostShard3", "frostShard4",
+    "frostSpike1", "frostSpike2", "frostSpike3", "frostSpike4",
+    -- Lightning tree
+    "lightningOrigin",
+    "chainLightning1", "chainLightning2", "chainLightning3", "chainLightning4",
+    "lightningBlast1", "lightningBlast2", "lightningBlast3", "lightningBlast4",
+    -- Sword tree
+    "swordOrigin",
+    "swordSlash1", "swordSlash2", "swordSlash3", "swordSlash4",
+    "skySword1", "skySword2", "skySword3", "skySword4",
+    -- Magician tree
+    "magicianOrigin",
+    "cardThrow1", "cardThrow2", "cardThrow3", "cardThrow4",
+    "bowlingHat1", "bowlingHat2", "bowlingHat3", "bowlingHat4",
+}
+
+local AutoUpgradeEnabled = false
+local AutoUpgradeThread  = nil
+local AutoUpgradeDelay   = 0.5
+local AutoUpgradeCycle   = 3.0
+local UpgradeResults     = { success = 0, failed = 0 }
+
+local function startAutoUpgrade()
+    UpgradeResults = { success = 0, failed = 0 }
+    AutoUpgradeThread = task.spawn(function()
+        while AutoUpgradeEnabled do
+            local rf      = getRF("UpgradeService")
+            local slimeRF = getRF("SlimeUpgradeService")
+
+            for _, slot in ipairs(UPGRADE_SLOTS) do
+                if not AutoUpgradeEnabled then break end
+
+                if rf then
+                    local ok = pcall(function()
+                        rf:InvokeServer(unpack({ "requestUnlock", slot }))
+                    end)
+                    if ok then UpgradeResults.success += 1 end
+                end
+
+                if slimeRF then
+                    pcall(function()
+                        slimeRF:InvokeServer(unpack({ "requestUnlock", slot }))
+                    end)
+                end
+
+                task.wait(AutoUpgradeDelay)
+            end
+
+            Library:Notify(
+                ('Upgrade cycle done. %d slots attempted.'):format(UpgradeResults.success),
+                3
+            )
+            UpgradeResults = { success = 0, failed = 0 }
+            task.wait(AutoUpgradeCycle)
+        end
+    end)
+end
+
+local function stopAutoUpgrade()
+    AutoUpgradeEnabled = false
+    if AutoUpgradeThread then task.cancel(AutoUpgradeThread); AutoUpgradeThread = nil end
 end
 
 -- ========================================
@@ -534,7 +751,194 @@ AutoGroup:AddToggle('AutoClaimIndexToggle', {
 
 AutoGroup:AddLabel('Claims: basic → big → huge → shiny → inverted')
 
-local RollGroup = Tabs.Main:AddRightGroupbox('Fast Roll')
+AutoGroup:AddToggle('AutoBuyZoneToggle', {
+    Text     = 'Auto Buy Zone',
+    Default  = false,
+    Tooltip  = 'Attempts to purchase a zone every 2 seconds',
+    Callback = function(value)
+        AutoBuyZoneEnabled = value
+        if value then startAutoBuyZone() else stopAutoBuyZone() end
+    end,
+})
+
+-- ===== AUTO UPGRADE GROUP =====
+
+local UpgradeGroup = Tabs.Main:AddLeftGroupbox('Auto Upgrade')
+
+UpgradeGroup:AddToggle('AutoUpgradeToggle', {
+    Text     = 'Auto Upgrade',
+    Default  = false,
+    Tooltip  = 'Cycles through ALL upgrade slots (loot tree, main, slime trees)',
+    Callback = function(value)
+        AutoUpgradeEnabled = value
+        if value then startAutoUpgrade() else stopAutoUpgrade() end
+    end,
+})
+
+UpgradeGroup:AddSlider('UpgradeCycleSlider', {
+    Text     = 'Cycle Delay',
+    Default  = 3, Min = 1, Max = 30, Rounding = 0, Suffix = 's',
+    Tooltip  = 'How long to wait between full upgrade cycles',
+    Callback = function(value) AutoUpgradeCycle = value end,
+})
+
+UpgradeGroup:AddSlider('UpgradeSlotDelaySlider', {
+    Text     = 'Per-Slot Delay',
+    Default  = 5, Min = 1, Max = 20, Rounding = 0, Suffix = ' x0.1s',
+    Tooltip  = 'Delay between each slot attempt (x0.1s)',
+    Callback = function(value) AutoUpgradeDelay = value * 0.1 end,
+})
+
+UpgradeGroup:AddButton('Run One Cycle Now', function()
+    local rf      = getRF("UpgradeService")
+    local slimeRF = getRF("SlimeUpgradeService")
+    if not rf and not slimeRF then Library:Notify('No upgrade remotes found!', 3); return end
+    Library:Notify('Running one upgrade cycle...', 2)
+    task.spawn(function()
+        local count = 0
+        for _, slot in ipairs(UPGRADE_SLOTS) do
+            if rf then
+                pcall(function()
+                    rf:InvokeServer(unpack({ "requestUnlock", slot }))
+                end)
+            end
+            if slimeRF then
+                pcall(function()
+                    slimeRF:InvokeServer(unpack({ "requestUnlock", slot }))
+                end)
+            end
+            count += 1
+            task.wait(AutoUpgradeDelay)
+        end
+        Library:Notify(('Done! Attempted %d slots.'):format(count), 3)
+    end)
+end)
+
+UpgradeGroup:AddLabel('Covers: Loot Tree, Main upgrades,')
+UpgradeGroup:AddLabel('Fire/Ice/Lightning/Sword/Magician trees.')
+UpgradeGroup:AddLabel('Notifies after each full cycle.')
+
+-- ===== AUTO USE ITEMS / POTIONS GROUP =====
+
+local ItemsGroup = Tabs.Main:AddRightGroupbox('Auto Use Items / Potions')
+
+ItemsGroup:AddToggle('ItemLuckToggle', {
+    Text     = 'Luck Potion',
+    Default  = false,
+    Tooltip  = 'Auto uses Luck boost every 2 seconds',
+    Callback = function(value)
+        ItemEnabled.luck = value
+        if value then startItem("luck") else stopItem("luck") end
+    end,
+})
+
+ItemsGroup:AddToggle('ItemUltraLuckToggle', {
+    Text     = 'Ultra Luck Potion',
+    Default  = false,
+    Tooltip  = 'Auto uses Ultra Luck boost every 2 seconds',
+    Callback = function(value)
+        ItemEnabled.ultraLuck = value
+        if value then startItem("ultraLuck") else stopItem("ultraLuck") end
+    end,
+})
+
+ItemsGroup:AddToggle('ItemRollSpeedToggle', {
+    Text     = 'Roll Speed Potion',
+    Default  = false,
+    Tooltip  = 'Auto uses Roll Speed boost every 2 seconds',
+    Callback = function(value)
+        ItemEnabled.rollSpeed = value
+        if value then startItem("rollSpeed") else stopItem("rollSpeed") end
+    end,
+})
+
+ItemsGroup:AddToggle('ItemBigDiceToggle', {
+    Text     = 'Big Dice',
+    Default  = false,
+    Tooltip  = 'Auto uses Big Dice item every 2 seconds',
+    Callback = function(value)
+        ItemEnabled.bigDice = value
+        if value then startItem("bigDice") else stopItem("bigDice") end
+    end,
+})
+
+ItemsGroup:AddButton('Use All Items Now', function()
+    for key in pairs(ItemEnabled) do
+        ItemEnabled[key] = true
+        startItem(key)
+    end
+    Options.ItemLuckToggle:SetValue(true)
+    Options.ItemUltraLuckToggle:SetValue(true)
+    Options.ItemRollSpeedToggle:SetValue(true)
+    Options.ItemBigDiceToggle:SetValue(true)
+    Library:Notify('All items enabled!', 2)
+end)
+
+ItemsGroup:AddButton('Stop All Items', function()
+    stopAllItems()
+    Options.ItemLuckToggle:SetValue(false)
+    Options.ItemUltraLuckToggle:SetValue(false)
+    Options.ItemRollSpeedToggle:SetValue(false)
+    Options.ItemBigDiceToggle:SetValue(false)
+    Library:Notify('All items stopped.', 2)
+end)
+
+ItemsGroup:AddLabel('Each item fires its remote every 2 seconds.')
+
+-- ===== FAKE STATS GROUP =====
+
+local FakeGroup = Tabs.Main:AddRightGroupbox('Fake Stats (Client-Side Only)')
+
+FakeGroup:AddLabel('!! Visual only — NOT real or server-synced !!')
+
+FakeGroup:AddToggle('FakeRollsToggle', {
+    Text     = 'Fake Roll Count',
+    Default  = false,
+    Tooltip  = 'CLIENT SIDED ONLY — fakes your Rolls leaderstat visually',
+    Callback = function(value)
+        FakeRollsEnabled = value
+        if value then applyFakeRolls() else removeFakeRolls() end
+    end,
+})
+
+FakeGroup:AddInput('FakeRollInput', {
+    Text        = 'Fake Roll Value',
+    Default     = '1',
+    Numeric     = true,
+    Finished    = true,
+    Placeholder = 'Enter roll count...',
+    Callback    = function(value)
+        FakeRollValue = tonumber(value) or 1
+    end,
+})
+
+FakeGroup:AddToggle('FakeBestToggle', {
+    Text     = 'Fake Best Roll',
+    Default  = false,
+    Tooltip  = 'CLIENT SIDED ONLY — fakes your Best Roll leaderstat visually',
+    Callback = function(value)
+        FakeBestEnabled = value
+        if value then applyFakeBest() else removeFakeBest() end
+    end,
+})
+
+FakeGroup:AddInput('FakeBestInput', {
+    Text        = 'Fake Best Roll Value',
+    Default     = '1',
+    Numeric     = true,
+    Finished    = true,
+    Placeholder = 'Enter best roll...',
+    Callback    = function(value)
+        FakeBestValue = tonumber(value) or 1
+    end,
+})
+
+FakeGroup:AddLabel('Only YOU see the fake values.')
+FakeGroup:AddLabel('Other players & server are unaffected.')
+
+-- ===== FAST ROLL + CODES =====
+
+local RollGroup = Tabs.Main:AddLeftGroupbox('Fast Roll')
 
 RollGroup:AddToggle('FastRollToggle', {
     Text     = 'Fast Roll',
@@ -548,7 +952,7 @@ RollGroup:AddToggle('FastRollToggle', {
 
 RollGroup:AddLabel('Roll delay fixed at 1.0s.')
 
-local CodesGroup = Tabs.Main:AddRightGroupbox('Codes')
+local CodesGroup = Tabs.Main:AddLeftGroupbox('Codes')
 
 CodesGroup:AddButton('Redeem All Codes', redeemAllCodes)
 CodesGroup:AddLabel('Codes:')
@@ -796,9 +1200,15 @@ UtilGroup:AddButton('Stop All Features', function()
     AutoRebirthEnabled    = false
     FastRollEnabled       = false
     AutoClaimIndexEnabled = false
+    AutoBuyZoneEnabled    = false
+    AutoUpgradeEnabled    = false
+    FakeRollsEnabled      = false
+    FakeBestEnabled       = false
 
     setFly(false); setNoclip(false); disableESP()
     stopAutoEquip(); stopAutoRebirth(); stopFastRoll(); stopAutoClaimIndex()
+    stopAutoBuyZone(); stopAllItems(); stopAutoUpgrade()
+    removeFakeRolls(); removeFakeBest()
     removeNoFog(); restoreShadows(); restoreGrass()
     restoreTextures(); restorePostFX(); removeFullBright(); unlockTime()
 
@@ -813,6 +1223,8 @@ UtilGroup:AddButton('Stop All Features', function()
     Options.AutoRebirthToggle:SetValue(false)
     Options.FastRollToggle:SetValue(false)
     Options.AutoClaimIndexToggle:SetValue(false)
+    Options.AutoBuyZoneToggle:SetValue(false)
+    Options.AutoUpgradeToggle:SetValue(false)
     Options.NoFogToggle:SetValue(false)
     Options.NoShadowsToggle:SetValue(false)
     Options.NoGrassToggle:SetValue(false)
@@ -821,6 +1233,12 @@ UtilGroup:AddButton('Stop All Features', function()
     Options.FullBrightToggle:SetValue(false)
     Options.WalkSpeedSlider:SetValue(16)
     Options.JumpPowerSlider:SetValue(50)
+    Options.ItemLuckToggle:SetValue(false)
+    Options.ItemUltraLuckToggle:SetValue(false)
+    Options.ItemRollSpeedToggle:SetValue(false)
+    Options.ItemBigDiceToggle:SetValue(false)
+    Options.FakeRollsToggle:SetValue(false)
+    Options.FakeBestToggle:SetValue(false)
 
     Library:Notify('All features stopped and reset.', 2)
 end)
